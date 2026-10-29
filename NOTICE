@@ -1,0 +1,24 @@
+fastjsonschema-rust attribution and scope
+===========================================
+
+This project is a standalone Rust port of the validation kernel of
+`fastjsonschema`. It is BSD-3-Clause licensed (see LICENSE); it vendors
+no upstream code.
+
+Behavior, keyword semantics, error-message texts and paths, and the
+`compile` / `compile_to_code` / `validate` entry-point shapes are
+modelled on:
+
+  horejsek/python-fastjsonschema — https://github.com/horejsek/python-fastjsonschema
+  Copyright (c) 2018, Michal Horejsek; BSD-3-Clause
+  (see https://github.com/horejsek/python-fastjsonschema/blob/master/LICENSE).
+
+Ported against fastjsonschema 2.22.2. The `fastjsonschema` package
+itself is a runtime dependency (it provides the exception classes the
+Rust kernel raises, the `compile_to_code` entry point, and the
+pure-Python fallback path); it is not vendored here.
+
+`tests/corpus/*` are original fixtures written for this port (not
+copied from the upstream test suite). The equivalence harness and the
+upstream-suite gate compare against the installed `fastjsonschema`
+package only at test time.

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+[project]
+name = "fastjsonschema-rust"
+version = "0.1.0"
+description = "Rust-accelerated JSON Schema validation kernel for fastjsonschema"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "BSD-3-Clause" }
+dependencies = ["fastjsonschema>=2.22"]
+
+[project.urls]
+repository = "https://github.com/John-Cusack/fastjsonschema-rust"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "fastjsonschema_rust._core"
+features = ["pyo3/extension-module"]
+manifest-path = "Cargo.toml"
+python-source = "."
