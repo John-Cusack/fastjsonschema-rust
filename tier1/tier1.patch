@@ -1,0 +1,103 @@
+Binary files /home/john/firstmate/data/rs-port-fastjsonschema/scratch/fjs_base/__pycache__/draft04.cpython-312.pyc and /home/john/firstmate/data/rs-port-fastjsonschema/scratch/fjs_armE/fastjsonschema/__pycache__/draft04.cpython-312.pyc differ
+diff -r /home/john/firstmate/data/rs-port-fastjsonschema/scratch/fjs_base/draft04.py /home/john/firstmate/data/rs-port-fastjsonschema/scratch/fjs_armE/fastjsonschema/draft04.py
+--- /home/john/firstmate/data/rs-port-fastjsonschema/scratch/fjs_base/draft04.py	2026-10-28 21:43:14.745713596 -0400
++++ /home/john/firstmate/data/rs-port-fastjsonschema/scratch/fjs_armE/fastjsonschema/draft04.py	2026-10-28 21:43:14.774903176 -0400
+@@ -111,8 +111,12 @@
+             raise JsonSchemaDefinitionException('enum must be an array')
+         matches = ' or '.join(self._enum_value_matches(self._variable, value) for value in enum)
+         if matches:
+-            with self.l('if not ({}):', matches):
+-                self.exc('{name} must be one of {}', self.e(enum), rule='enum')
++            if all(isinstance(value, str) for value in enum):
++                with self.l('if {variable} not in {enum_values}:', enum_values=tuple(enum)):
++                    self.exc('{name} must be one of {}', self.e(enum), rule='enum')
++            else:
++                with self.l('if not ({}):', matches):
++                    self.exc('{name} must be one of {}', self.e(enum), rule='enum')
+         else:
+             with self.l('if True:'):
+                 self.exc('{name} must be one of {}', self.e(enum), rule='enum')
+@@ -508,6 +512,21 @@
+             with self.l('if {variable}_len > {maxProperties}:'):
+                 self.exc('{name} must contain less than or equal to {maxProperties} properties', rule='maxProperties')
+ 
++    def _needs_keys_set(self):
++        """
++        Whether generated code for this object level needs the
++        ``{variable}_keys`` set at all. It is only consumed by
++        ``additionalProperties`` (schema or False form) and by
++        ``propertyNames: false``; otherwise building + pruning it per
++        object is dead weight on the valid path.
++        """
++        addl = self._definition.get('additionalProperties', True)
++        if addl is not True and addl != {}:
++            return True
++        if self._definition.get('propertyNames') is False:
++            return True
++        return False
++
+     def generate_required(self):
+         self.create_variable_is_dict()
+         with self.l('if {variable}_is_dict:'):
+@@ -525,7 +544,7 @@
+                 ]
+                 if not_possible:
+                     raise JsonSchemaDefinitionException('{}: items {} are required but not allowed'.format(self._variable, not_possible))
+-            self.l('{variable}__missing_keys = set({required}) - {variable}.keys()')
++            self.l('{variable}__missing_keys = [key for key in {required} if key not in {variable}]')
+             with self.l('if {variable}__missing_keys:'):
+                 dynamic = 'str(sorted({variable}__missing_keys)) + " properties"'
+                 self.exc('{name} must contain ', self.e(self._definition['required']), rule='required', append_to_msg=dynamic)
+@@ -546,13 +565,16 @@
+         """
+         self.create_variable_is_dict()
+         with self.l('if {variable}_is_dict:'):
+-            self.create_variable_keys()
++            keys_suffix = '_keys' if self._needs_keys_set() else ''
++            if keys_suffix:
++                self.create_variable_keys()
+             for key, prop_definition in self._definition['properties'].items():
+                 key_name = re.sub(r'($[^a-zA-Z]|[^a-zA-Z0-9])', '', key)
+                 if not isinstance(prop_definition, (dict, bool)):
+                     raise JsonSchemaDefinitionException('{}[{}] must be object'.format(self._variable, key_name))
+-                with self.l('if "{}" in {variable}_keys:', self.e(key)):
+-                    self.l('{variable}_keys.remove("{}")', self.e(key))
++                with self.l('if "{}" in {variable}' + keys_suffix + ':', self.e(key)):
++                    if keys_suffix:
++                        self.l('{variable}_keys.remove("{}")', self.e(key))
+                     self.l('{variable}__{0} = {variable}["{1}"]', key_name, self.e(key))
+                     self.generate_func_code_block(
+                         prop_definition,
+@@ -579,7 +601,8 @@
+         """
+         self.create_variable_is_dict()
+         with self.l('if {variable}_is_dict:'):
+-            self.create_variable_keys()
++            if self._needs_keys_set():
++                self.create_variable_keys()
+             pattern_prop_definition = self._definition['patternProperties']
+             if pattern_prop_definition == {}:
+                 return
+@@ -588,8 +611,9 @@
+             with self.l('for {variable}_key, {variable}_val in {variable}.items():'):
+                 for pattern, definition in self._definition['patternProperties'].items():
+                     with self.l('if REGEX_PATTERNS[{}].search({variable}_key):', repr(pattern)):
+-                        with self.l('if {variable}_key in {variable}_keys:'):
+-                            self.l('{variable}_keys.remove({variable}_key)')
++                        if self._needs_keys_set():
++                            with self.l('if {variable}_key in {variable}_keys:'):
++                                self.l('{variable}_keys.remove({variable}_key)')
+                         self.generate_func_code_block(
+                             definition,
+                             '{}_val'.format(self._variable),
+@@ -615,8 +639,9 @@
+         """
+         self.create_variable_is_dict()
+         with self.l('if {variable}_is_dict:'):
+-            self.create_variable_keys()
+             add_prop_definition = self._definition["additionalProperties"]
++            if add_prop_definition is not True and add_prop_definition != {}:
++                self.create_variable_keys()
+             if add_prop_definition is True or add_prop_definition == {}:
+                 return
+             if add_prop_definition:
