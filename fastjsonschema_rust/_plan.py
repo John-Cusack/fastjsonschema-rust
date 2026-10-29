@@ -38,8 +38,8 @@ def select_class(schema):
     return CodeGeneratorDraft2019, '2019'
 
 
-# Dispatch order == upstream _json_keywords_to_function order.
-KEYWORD_ORDER = [
+# Draft keyword sets (upstream adds keys per draft class).
+BASE_KEYWORDS = [
     'type', 'enum', 'allOf', 'anyOf', 'oneOf', 'not',
     'minLength', 'maxLength', 'pattern', 'format',
     'minimum', 'maximum', 'multipleOf',
@@ -47,6 +47,22 @@ KEYWORD_ORDER = [
     'minProperties', 'maxProperties', 'required',
     'dependencies', 'properties', 'patternProperties',
     'additionalProperties',
+]
+DRAFT06_KEYWORDS = BASE_KEYWORDS + [
+    'exclusiveMinimum', 'exclusiveMaximum', 'propertyNames',
+    'contains', 'const',
+]
+DRAFT07_KEYWORDS = DRAFT06_KEYWORDS + [
+    'if', 'contentEncoding', 'contentMediaType',
+]
+KEYWORD_SETS = {
+    '04': frozenset(BASE_KEYWORDS),
+    '06': frozenset(DRAFT06_KEYWORDS),
+    '07': frozenset(DRAFT07_KEYWORDS),
+    '2019': frozenset(DRAFT07_KEYWORDS),
+}
+# Dispatch order == upstream _json_keywords_to_function order.
+KEYWORD_ORDER = BASE_KEYWORDS + [
     'exclusiveMinimum', 'exclusiveMaximum', 'propertyNames',
     'contains', 'const',
     'if', 'contentEncoding', 'contentMediaType',
@@ -211,8 +227,9 @@ class Builder:
         old_var, self.current_varname = self.current_varname, varname
         try:
             checks = []
+            allowed = KEYWORD_SETS[self.draft]
             for key in KEYWORD_ORDER:
-                if key in definition:
+                if key in definition and key in allowed:
                     fn = getattr(self, 'kw_' + key, None)
                     if fn is None:
                         continue  # unknown to this draft; ignored
@@ -577,6 +594,10 @@ class Builder:
                                           'contains')))
 
     def kw_const(self, d, checks):
+        # Upstream parity: detailed=False + const crashes at compile
+        # with KeyError('definition_rule') (unfilled format placeholder).
+        if not self.gen._detailed_exceptions:
+            raise KeyError('definition_rule')
         const = self.expand(d).get('const')
         # Runtime message: source-embedded e() is parsed back, so a str
         # const renders bare and anything else renders as str().

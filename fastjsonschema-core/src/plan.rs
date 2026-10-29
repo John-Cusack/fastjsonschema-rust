@@ -143,17 +143,15 @@ fn get_opt_str(d: &Bound<PyDict>, key: &str) -> PyResult<Option<String>> {
 }
 
 fn get_bool(d: &Bound<PyDict>, key: &str) -> PyResult<bool> {
-    Ok(d
-        .get_item(key)?
+    d.get_item(key)?
         .unwrap_or_else(|| panic!("plan: missing {key}"))
-        .extract::<bool>()?)
+        .extract::<bool>()
 }
 
 fn get_idx(d: &Bound<PyDict>, key: &str) -> PyResult<usize> {
-    Ok(d
-        .get_item(key)?
+    d.get_item(key)?
         .unwrap_or_else(|| panic!("plan: missing {key}"))
-        .extract::<usize>()?)
+        .extract::<usize>()
 }
 
 fn get_opt_idx(d: &Bound<PyDict>, key: &str) -> PyResult<Option<usize>> {

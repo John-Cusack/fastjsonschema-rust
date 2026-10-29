@@ -45,6 +45,9 @@ pub struct RtError {
     pub definition: Py<PyAny>,
 }
 
+/// Error-path only: moved solely when validation fails, never on the
+/// hot Ok path, so the large variant costs nothing per validated value.
+#[allow(clippy::result_large_err)]
 pub enum Fail {
     Plan(RtError),
     Raw(PyErr),
@@ -71,7 +74,7 @@ fn is_bool(_py: Python<'_>, v: &Bound<'_, PyAny>) -> bool {
 }
 
 fn is_long(v: &Bound<'_, PyAny>) -> bool {
-    v.is_instance_of::<pyo3::types::PyLong>()
+    v.is_instance_of::<pyo3::types::PyInt>()
 }
 
 fn is_float(v: &Bound<'_, PyAny>) -> bool {
@@ -133,7 +136,7 @@ fn type_match(py: Python<'_>, cx: &Ctxt, t: &TypeName, v: &Bound<'_, PyAny>, dra
 }
 
 /// Structural matcher mirroring upstream `_enum_value_matches`.
-fn enum_match(py: Python<'_>, cx: &Ctxt, pat: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<bool> {
+fn enum_match(py: Python<'_>, pat: &Bound<'_, PyAny>, v: &Bound<'_, PyAny>) -> PyResult<bool> {
     if pat.is_instance_of::<pyo3::types::PyBool>() {
         return Ok(is_bool(py, v) && v.eq(pat)?);
     }
@@ -167,7 +170,7 @@ fn enum_match(py: Python<'_>, cx: &Ctxt, pat: &Bound<'_, PyAny>, v: &Bound<'_, P
         for (k, pv) in pd.iter() {
             match vd.get_item(&k)? {
                 Some(vv) => {
-                    if !enum_match(py, cx, &pv, &vv)? {
+                    if !enum_match(py, &pv, &vv)? {
                         return Ok(false);
                     }
                 }
@@ -187,7 +190,7 @@ fn enum_match(py: Python<'_>, cx: &Ctxt, pat: &Bound<'_, PyAny>, v: &Bound<'_, P
         for i in 0..n {
             let pv = pat.get_item(i)?;
             let vv = v.get_item(i)?;
-            if !enum_match(py, cx, &pv, &vv)? {
+            if !enum_match(py, &pv, &vv)? {
                 return Ok(false);
             }
         }
@@ -198,12 +201,12 @@ fn enum_match(py: Python<'_>, cx: &Ctxt, pat: &Bound<'_, PyAny>, v: &Bound<'_, P
 
 fn truthy_call(callable: &Bound<'_, PyAny>, arg: &Bound<'_, PyAny>) -> Result<bool, Fail> {
     let r = Fail::raw(callable.call1((arg,)))?;
-    Ok(Fail::raw(r.is_truthy())?)
+    Fail::raw(r.is_truthy())
 }
 
 fn search_hit(rx: &Bound<'_, PyAny>, value: &Bound<'_, PyAny>, method: &str) -> Result<bool, Fail> {
     let r = Fail::raw(rx.call_method1(method, (value,)))?;
-    Ok(Fail::raw(r.is_truthy())?)
+    Fail::raw(r.is_truthy())
 }
 
 /// Normalizer for uniqueItems, mirroring upstream `fn`.
@@ -256,8 +259,16 @@ fn dyn_text(py: Python<'_>, dyn_: &DynErr) -> Result<String, Fail> {
     }
 }
 
-fn build_message(py: Python<'_>, e: &RtError) -> Result<String, Fail> {
-    let tail = dyn_text(py, &e.dynamic)?;
+fn build_message(py: Python<'_>, cx: &Ctxt, e: &RtError) -> Result<String, Fail> {
+    // detailed=False drops append_to_msg tails (required missing-list,
+    // oneOf count) but keeps message-embedded expressions
+    // (additionalProperties set, evaluated at runtime like upstream).
+    let tail = match &e.dynamic {
+        DynErr::None => String::new(),
+        DynErr::ExtraSet(_) => dyn_text(py, &e.dynamic)?,
+        _ if cx.detailed => dyn_text(py, &e.dynamic)?,
+        _ => String::new(),
+    };
     let mut s = String::with_capacity(e.before.len() + e.name.len() + e.after.len() + tail.len());
     s.push_str(&e.before);
     s.push_str(&e.name);
@@ -267,7 +278,7 @@ fn build_message(py: Python<'_>, e: &RtError) -> Result<String, Fail> {
 }
 
 fn value_err_obj<'py>(py: Python<'py>, cx: &Ctxt, e: &RtError) -> Result<Bound<'py, PyAny>, Fail> {
-    let message = build_message(py, e)?;
+    let message = build_message(py, cx, e)?;
     if cx.detailed {
         let rule: Py<PyAny> = match &e.rule {
             Some(r) => PyString::new(py, r).into_any().unbind(),
@@ -401,7 +412,7 @@ fn apply_check<'py>(
         Check::Enum { values, tpl } => {
             let mut hit = false;
             for pat in values {
-                if Fail::raw(enum_match(py, cx, pat.bind(py), value))? {
+                if Fail::raw(enum_match(py, pat.bind(py), value))? {
                     hit = true;
                     break;
                 }
@@ -411,7 +422,7 @@ fn apply_check<'py>(
             }
         }
         Check::Const { value: pat, tpl } => {
-            if !Fail::raw(enum_match(py, cx, pat.bind(py), value))? {
+            if !Fail::raw(enum_match(py, pat.bind(py), value))? {
                 fail_here(prefix, segs, tpl, DynErr::None, value, &definition, out)?;
             }
         }

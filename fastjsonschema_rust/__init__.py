@@ -51,14 +51,14 @@ def compile(definition, handlers={}, formats={}, use_default=True,
             definition, handlers, formats, use_default,
             use_formats, detailed_exceptions, fast_fail)
     validator = Validator(plan)
-    if formats:
-        def validate_fn(data, custom_formats=None, name_prefix=None):
-            if custom_formats is None:
-                custom_formats = formats
-            return validator.validate(data, custom_formats, name_prefix)
-        validate_fn.__name__ = 'validate'
-        return validate_fn
-    return validator.validate
+    def validate_fn(data, custom_formats=None, name_prefix=None):
+        if custom_formats is None:
+            custom_formats = formats
+        return validator.validate(data, custom_formats, name_prefix)
+    validate_fn.__name__ = 'validate'
+    validate_fn.validate_many = validator.validate_many
+    validate_fn.validator = validator
+    return validate_fn
 def validate(definition, data, handlers={}, formats={}, use_default=True,
              use_formats=True, detailed_exceptions=True, fast_fail=True):
     return compile(definition, handlers, formats, use_default,
